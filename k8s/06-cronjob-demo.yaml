@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: crypto-demo
+  namespace: crypto-system
+  labels:
+    app: crypto-app
+    component: demo
+spec:
+  schedule: "0 */6 * * *"  # Run every 6 hours
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  
+  jobTemplate:
+    metadata:
+      labels:
+        app: crypto-app
+        component: demo
+    spec:
+      parallelism: 1
+      completions: 1
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 3600
+      
+      template:
+        metadata:
+          labels:
+            app: crypto-app
+            component: demo
+        spec:
+          serviceAccountName: crypto-app
+          restartPolicy: Never
+          
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          
+          containers:
+          - name: crypto-demo
+            image: crypto-app:latest
+            imagePullPolicy: IfNotPresent
+            
+            command: ["/app/entrypoint.sh"]
+            args: []
+            
+            env:
+            - name: MODE
+              value: "demo"
+            
+            resources:
+              requests:
+                cpu: 100m
+                memory: 64Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
+            
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              seccompProfile:
+                type: RuntimeDefault

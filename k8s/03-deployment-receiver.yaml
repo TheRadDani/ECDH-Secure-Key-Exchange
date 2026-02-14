@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crypto-receiver
+  namespace: crypto-system
+  labels:
+    app: crypto-app
+    component: receiver
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: crypto-app
+      component: receiver
+  template:
+    metadata:
+      labels:
+        app: crypto-app
+        component: receiver
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: crypto-app
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      
+      terminationGracePeriodSeconds: 30
+      
+      containers:
+      - name: crypto-receiver
+        image: docker.io/theraddani/crypto-app:1.0.0
+        imagePullPolicy: IfNotPresent
+        
+        command: ["/app/entrypoint.sh"]
+        args: []
+        
+        env:
+        - name: MODE
+          value: "receive"
+        - name: SOCKET_PATH
+          value: "/tmp/sockets/secure_transfer.sock"
+        
+        ports:
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        
+        livenessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - test -f /app/secure_transfer
+          initialDelaySeconds: 5
+          periodSeconds: 30
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        readinessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - test -f /app/secure_transfer && test -f /app/crypto_core
+          initialDelaySeconds: 2
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        volumeMounts:
+        - name: shared-socket-dir
+          mountPath: /tmp/sockets
+        - name: app-data
+          mountPath: /app/data
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+      
+      volumes:
+      - name: shared-socket-dir
+        hostPath:
+          path: /tmp/crypto-sockets
+          type: DirectoryOrCreate
+      - name: app-data
+        emptyDir:
+          sizeLimit: 100Mi

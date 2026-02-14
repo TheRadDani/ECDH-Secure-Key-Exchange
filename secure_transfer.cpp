@@ -29,12 +29,22 @@
 #include <iostream>
 #include <vector>
 #include <cstring>
+#include <cstdlib>
 #include <thread>
 #include <chrono>
 #include <iomanip>
 
 // Socket path for local communication
-const char* SOCKET_PATH = "/tmp/secure_transfer.sock";
+// Read from environment variable SOCKET_PATH, default to /tmp/sockets/secure_transfer.sock
+std::string getSocketPath() {
+    const char* env_path = std::getenv("SOCKET_PATH");
+    if (env_path != nullptr && std::strlen(env_path) > 0) {
+        return std::string(env_path);
+    }
+    return "/tmp/sockets/secure_transfer.sock";  // Default path
+}
+
+const std::string SOCKET_PATH_DEFAULT = "/tmp/sockets/secure_transfer.sock";
 
 // RAII wrappers for OpenSSL
 class EVPCipherContext {
@@ -378,15 +388,16 @@ public:
 class SecureReceiver {
 private:
     int server_socket;
+    std::string socket_path;
     ECCCrypto ecc;
 
 public:
-    SecureReceiver() : server_socket(-1) {}
+    SecureReceiver() : server_socket(-1), socket_path(getSocketPath()) {}
 
     ~SecureReceiver() {
         if (server_socket >= 0) {
             close(server_socket);
-            unlink(SOCKET_PATH);
+            unlink(socket_path.c_str());
         }
     }
 
@@ -402,13 +413,13 @@ public:
         }
 
         // Remove old socket file if exists
-        unlink(SOCKET_PATH);
+        unlink(socket_path.c_str());
 
         // Bind socket
         struct sockaddr_un addr;
         memset(&addr, 0, sizeof(addr));
         addr.sun_family = AF_UNIX;
-        strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
+        strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
 
         if (bind(server_socket, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
             throw std::runtime_error("Failed to bind socket");
@@ -419,7 +430,7 @@ public:
             throw std::runtime_error("Failed to listen on socket");
         }
 
-        std::cout << "\n[*] Listening for connections on " << SOCKET_PATH << std::endl;
+        std::cout << "\n[*] Listening for connections on " << socket_path << std::endl;
         std::cout << "[*] Waiting for sender..." << std::endl;
 
         // Accept connection
@@ -512,8 +523,11 @@ private:
 class SecureSender {
 private:
     ECCCrypto ecc;
+    std::string socket_path;
 
 public:
+    SecureSender() : socket_path(getSocketPath()) {}
+
     void send(const std::string& message) {
         std::cout << "\n╔══════════════════════════════════════╗" << std::endl;
         std::cout << "║         SECURE SENDER STARTED        ║" << std::endl;
@@ -531,9 +545,9 @@ public:
         struct sockaddr_un addr;
         memset(&addr, 0, sizeof(addr));
         addr.sun_family = AF_UNIX;
-        strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
+        strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
 
-        std::cout << "[*] Connecting to receiver..." << std::endl;
+        std::cout << "[*] Connecting to receiver on " << socket_path << "..." << std::endl;
         
         // Retry connection a few times (receiver might not be ready immediately)
         int retries = 5;
@@ -621,9 +635,7 @@ private:
     }
 };
 
-/**
- * MAIN PROGRAM
- */
+
 int main(int argc, char* argv[]) {
     try {
         std::cout << "╔════════════════════════════════════════════════╗" << std::endl;
