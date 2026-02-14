@@ -20,17 +20,22 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
 
+      - name: Create kind config
+        run: |
+          cat <<'EOF' > kind-config.yaml
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          containerdConfigPatches:
+            - |-
+              [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
+                endpoint = ["http://kind-registry:5000"]
+          EOF
+
       - name: Set up kind
         uses: helm/kind-action@v1.10.0
         with:
           cluster_name: ci-cluster
-          config: |
-            kind: Cluster
-            apiVersion: kind.x-k8s.io/v1alpha4
-            containerdConfigPatches:
-              - |-
-                [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
-                  endpoint = ["http://kind-registry:5000"]
+          config: kind-config.yaml
 
       - name: Create local registry for CI image pushes
         run: |
