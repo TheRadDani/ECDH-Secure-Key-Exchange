@@ -141,7 +141,7 @@ g++ -std=c++11 -Wall -Wextra -O3 -pthread \
 - `-pthread`: Enable POSIX threads support (for secure_transfer)
 - `-lssl -lcrypto`: Link against OpenSSL libraries
 
-## 🚀 Running the Programs
+## Running the Programs
 
 ### Program 1: crypto_core
 
