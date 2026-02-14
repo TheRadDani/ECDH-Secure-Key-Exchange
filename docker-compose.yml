@@ -1,0 +1,188 @@
+# Docker Compose for local testing
+# Run: docker-compose up
+version: '3.9'
+
+services:
+  # Receiver service
+  receiver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        BUILD_DATE: ${BUILD_DATE:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}
+        VCS_REF: ${VCS_REF:-$(git rev-parse --short HEAD)}
+    image: crypto-app:latest
+    container_name: crypto-receiver
+    
+    environment:
+      MODE: receive
+      SOCKET_PATH: /tmp/sockets/secure_transfer.sock
+      LOG_LEVEL: info
+    
+    volumes:
+      # Shared volume for Unix socket
+      - socket-data:/tmp/sockets
+    
+    networks:
+      - crypto-network
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "test", "-f", "/app/secure_transfer"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # Read-only root filesystem
+    read_only: true
+    
+    # User namespace
+    user: "1000:1000"
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+  
+  # Sender service (runs once and exits)
+  sender:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: crypto-app:latest
+    container_name: crypto-sender
+    
+    environment:
+      MODE: send
+      MESSAGE: "Encrypted message from Docker Compose at ${MESSAGE_TIME:-$(date)}"
+      SOCKET_PATH: /tmp/sockets/secure_transfer.sock
+    
+    volumes:
+      - socket-data:/tmp/sockets
+    
+    networks:
+      - crypto-network
+    
+    depends_on:
+      receiver:
+        condition: service_healthy
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    read_only: true
+    user: "1000:1000"
+    
+    # Run once and exit
+    restart: "no"
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+  
+  # Demo service (runs crypto_core)
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: crypto-app:latest
+    container_name: crypto-demo
+    
+    environment:
+      MODE: demo
+    
+    networks:
+      - crypto-network
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    read_only: true
+    user: "1000:1000"
+    restart: "no"
+    
+    profiles:
+      - demo  # Only run when explicitly requested
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Networks
+networks:
+  crypto-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/24
+
+# Volumes
+volumes:
+  socket-data:
+    driver: local
+
+# Usage:
+# ------
+# Run receiver and sender:
+#   docker-compose up
+#
+# Run only demo:
+#   docker-compose --profile demo up demo
+#
+# Build images:
+#   docker-compose build
+#
+# View logs:
+#   docker-compose logs -f receiver
+#   docker-compose logs -f sender
+#
+# Clean up:
+#   docker-compose down -v
+#
+# Run in detached mode:
+#   docker-compose up -d
+#
+# Scale receiver (not recommended for this use case):
+#   docker-compose up --scale receiver=2
