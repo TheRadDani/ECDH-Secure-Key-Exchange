@@ -282,7 +282,7 @@ This program simulates secure network communication between two parties.
 Modify the encrypted data to see authentication failure:
 - The program will detect tampering via GCM authentication tag
 
-## 🛡️ Security Best Practices
+## Security Best Practices
 
 ### What This Code Does Right
 1. **Uses industry-standard algorithms** (AES-256, P-256)
@@ -392,7 +392,7 @@ g++ -std=c++11 -I/usr/include/openssl \
 └── main()                 - Mode selection and execution
 ```
 
-## 📝 License and Disclaimer
+## License and Disclaimer
 
 This code is for **educational purposes only**. While it uses production-grade cryptography libraries and follows best practices, additional security measures are needed for production deployment.
 
