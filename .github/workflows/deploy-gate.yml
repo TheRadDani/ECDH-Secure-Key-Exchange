@@ -1,0 +1,70 @@
+name: Deploy Gate
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  deploy-check:
+    name: deploy-k8s gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Create kind config
+        run: |
+          cat <<'EOF' > kind-config.yaml
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          containerdConfigPatches:
+            - |-
+              [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
+                endpoint = ["http://kind-registry:5000"]
+          EOF
+
+      - name: Set up kind
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: ci-cluster
+          config: kind-config.yaml
+
+      - name: Create local registry for CI image pushes
+        run: |
+          docker run -d --restart=always -p 5001:5000 --name kind-registry registry:2 || true
+          docker network connect kind kind-registry || true
+
+      - name: Document local registry in cluster
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: local-registry-hosting
+            namespace: kube-public
+          data:
+            localRegistryHosting.v1: |
+              host: "localhost:5001"
+              help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
+          EOF
+
+      - name: Create .env for deployment script
+        run: |
+          cat <<EOF > .env
+          NAMESPACE=crypto-system
+          IMAGE_NAME=crypto-app
+          IMAGE_VERSION=${{ github.sha }}
+          REGISTRY=localhost:5001
+          K8S_DIR=k8s
+          EOF
+
+      - name: Run deploy gate
+        run: ./deploy-k8s.sh deploy
