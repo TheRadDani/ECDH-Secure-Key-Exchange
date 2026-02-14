@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: crypto-receiver-pdb
+  namespace: crypto-system
+  labels:
+    app: crypto-app
+    component: receiver
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: crypto-app
+      component: receiver

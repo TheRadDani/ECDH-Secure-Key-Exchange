@@ -1,0 +1,98 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: crypto-sender
+  namespace: crypto-system
+  labels:
+    app: crypto-app
+    component: sender
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  
+  template:
+    metadata:
+      labels:
+        app: crypto-app
+        component: sender
+      annotations:
+        prometheus.io/scrape: "false"
+    spec:
+      serviceAccountName: crypto-app
+      restartPolicy: Never
+      
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - crypto-app
+                - key: component
+                  operator: In
+                  values:
+                  - receiver
+              topologyKey: kubernetes.io/hostname
+      
+      initContainers:
+      - name: wait-for-socket
+        image: busybox:1.35
+        command: ['sh', '-c', 'for i in $(seq 1 30); do if [ -S /tmp/sockets/secure_transfer.sock ]; then echo "Socket found"; exit 0; fi; echo "Waiting for socket..."; sleep 1; done; echo "Socket not found after 30 seconds"; exit 1']
+        volumeMounts:
+        - name: shared-socket-dir
+          mountPath: /tmp/sockets
+      
+      containers:
+      - name: crypto-sender
+        image: docker.io/theraddani/crypto-app:1.0.0
+        imagePullPolicy: IfNotPresent
+        
+        command: ["/app/entrypoint.sh"]
+        args: []
+        
+        env:
+        - name: MODE
+          value: "send"
+        - name: MESSAGE
+          value: "Secure message from Kubernetes Job"
+        - name: SOCKET_PATH
+          value: "/tmp/sockets/secure_transfer.sock"
+        
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        
+        volumeMounts:
+        - name: shared-socket-dir
+          mountPath: /tmp/sockets
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+      
+      volumes:
+      - name: shared-socket-dir
+        hostPath:
+          path: /tmp/crypto-sockets
+          type: DirectoryOrCreate

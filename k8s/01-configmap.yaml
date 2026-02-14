@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crypto-config
+  namespace: crypto-system
+  labels:
+    app: crypto-app
+data:
+  SOCKET_PATH: "/tmp/sockets/secure_transfer.sock"
+  MODE: "receive"
+  MESSAGE: "Default message from container"
