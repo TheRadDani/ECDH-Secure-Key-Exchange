@@ -20,7 +20,7 @@ tokio = { version = "1.14", features = ["full"] }
 
 # cryptography library for ECDH key exchange
 sha3 = "0.10"           # SHA3 (Keccak256) hashing
-lilp2p-identify = "0.2" # Identity management
+libp2p-identify = "0.2" # Identity management
 
 # serialization
 serde = { version = "1.0", features = ["derive"] }
