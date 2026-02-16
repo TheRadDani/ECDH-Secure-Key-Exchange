@@ -1,32 +1,31 @@
 [package]
-name = "kademilia-crypto-node"
+name = "kademlia-crypto-node"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-
+# Core libp2p dependencies for P2P networking
 libp2p = { version = "0.54", features = [
-    "kad",       # Kademlia DHT
-    "tcp",       #TCP transport
-    "noise",     # Noise protocol encryption
-    "yamux",     # Multiplexing
-    "identify",  # Peer identification
-    "gossipsub", # message pub-sub
-    "mdns",      # local peer discovery
+    "kad",           # Kademlia DHT
+    "tcp",           # TCP transport
+    "noise",         # Noise protocol encryption
+    "yamux",         # Multiplexing
+    "identify",      # Peer identification
+    "gossipsub",     # Optional: for future message broadcasting
+    "mdns",          # Optional: local peer discovery
 ] }
 
-# Aysnc runtiime
-tokio = { version = "1.14", features = ["full"] }
+# Async runtime
+tokio = { version = "1.41", features = ["full"] }
 
-# cryptography library for ECDH key exchange
-sha3 = "0.10"           # SHA3 (Keccak256) hashing
-libp2p-identify = "0.2" # Identity management
+# Cryptography
+sha3 = "0.10"              # SHA-3 (Keccak256) hashing
+libp2p-identity = "0.2"    # Identity management
 
-# serialization
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-
 # Utilities
-hex = "0.4"    # Hex encoding/decoding
-anyhow = "1.0" #error handling
+hex = "0.4"                # Hex encoding/decoding
+anyhow = "1.0"             # Error handling
