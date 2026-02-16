@@ -34,7 +34,6 @@ use clap::Parser;
 use dashmap::DashMap;
 use futures::StreamExt;
 use libp2p::{
-    core::upgrade,
     gossipsub, identify,
     identity,
     kad,
@@ -42,8 +41,9 @@ use libp2p::{
     noise,
     request_response,
     swarm::SwarmEvent,
-    tcp, yamux, Multiaddr, PeerId, Transport,
+    tcp, yamux, Multiaddr, PeerId,
 };
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{self, AsyncBufReadExt, BufReader};
@@ -79,34 +79,7 @@ struct Cli {
     secret_key: Option<String>,
 }
 
-// ════════════════════════════════════════════════════════════════════
-// Transport builder
-// ════════════════════════════════════════════════════════════════════
-
-/// Build the production transport stack: TCP → Noise → Yamux.
-///
-/// Security layers:
-/// 1. **TCP** with `NODELAY` for low-latency P2P communication.
-/// 2. **Noise** (XX handshake) for authenticated encryption with PFS.
-/// 3. **Yamux** for multiplexed streams over a single connection.
-fn build_transport(
-    keypair: &identity::Keypair,
-) -> Result<libp2p::core::transport::Boxed<(PeerId, libp2p::core::muxing::StreamMuxerBox)>> {
-    let tcp_transport =
-        tcp::tokio::Transport::new(tcp::Config::default().nodelay(true));
-
-    let noise_config =
-        noise::Config::new(keypair).context("Failed to build Noise config")?;
-
-    let transport = tcp_transport
-        .upgrade(upgrade::Version::V1)
-        .authenticate(noise_config)
-        .multiplex(yamux::Config::default())
-        .timeout(Duration::from_secs(20))
-        .boxed();
-
-    Ok(transport)
-}
+// NOTE: Transport is built via SwarmBuilder in main() — no manual builder needed.
 
 // ════════════════════════════════════════════════════════════════════
 // Transaction cache (deduplication)
@@ -154,23 +127,32 @@ async fn main() -> Result<()> {
 
     // ── libp2p identity ─────────────────────────────────────────────
     let id_keys = identity::Keypair::generate_ed25519();
-    let peer_id = PeerId::from(id_keys.public());
+
+    // ── Swarm: TCP → Noise (XX) → Yamux + DNS ─────────────────────
+    //
+    // SwarmBuilder is the modern libp2p 0.54 API that correctly wires
+    // transport negotiation, connection upgrades, and executor binding.
+    // DNS enables resolving /dns4/... and /dns6/... multiaddrs for
+    // internet-scale peer connectivity.
+    let mut swarm = libp2p::SwarmBuilder::with_existing_identity(id_keys)
+        .with_tokio()
+        .with_tcp(
+            tcp::Config::default().nodelay(true),
+            noise::Config::new,
+            yamux::Config::default,
+        )?
+        .with_dns()?
+        .with_behaviour(|key| {
+            let peer_id = PeerId::from(key.public());
+            network::build_behaviour(key, peer_id)
+                .expect("Fatal: failed to build network behaviour")
+        })
+        .expect("Failed to build swarm behaviour phase")
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(120)))
+        .build();
+
+    let peer_id = *swarm.local_peer_id();
     info!("Peer ID        : {peer_id}");
-
-    // ── Transport ───────────────────────────────────────────────────
-    let transport = build_transport(&id_keys)?;
-
-    // ── Network behaviour ───────────────────────────────────────────
-    let behaviour = network::build_behaviour(&id_keys, peer_id)?;
-
-    // ── Swarm ───────────────────────────────────────────────────────
-    let mut swarm = libp2p::Swarm::new(
-        transport,
-        behaviour,
-        peer_id,
-        libp2p::swarm::Config::with_tokio_executor()
-            .with_idle_connection_timeout(Duration::from_secs(120)),
-    );
 
     // Listen
     swarm
@@ -183,12 +165,22 @@ async fn main() -> Result<()> {
         swarm.dial(addr.clone()).context("Failed to dial peer")?;
     }
 
+    // ── Trigger Kademlia bootstrap (populates routing table) ────────
+    if !cli.peer.is_empty() {
+        match swarm.behaviour_mut().kademlia.bootstrap() {
+            Ok(_) => info!("Kademlia bootstrap initiated"),
+            Err(e) => warn!("Kademlia bootstrap deferred (no peers yet): {e:?}"),
+        }
+    }
+
     // ── Tx dedup cache ──────────────────────────────────────────────
     let tx_cache: TxCache = Arc::new(DashMap::new());
 
-    // ── Stdin reader for interactive commands ────────────────────────
-    let mut stdin = BufReader::new(io::stdin()).lines();
+    // ── Track connected peers for direct sending ────────────────────
+    let mut connected_peers: HashSet<PeerId> = HashSet::new();
 
+    // ── Stdin reader for interactive commands ────────────────────────
+    let mut stdin = BufReader::new(io::stdin()).lines();    let mut stdin_open = true;  // Set false on EOF to avoid busy loop
     info!("─────────────────────────────────────────");
     info!("Commands:");
     info!("  send <address_hex> <amount>  — transfer funds");
@@ -204,16 +196,28 @@ async fn main() -> Result<()> {
     // ════════════════════════════════════════════════════════════════
     loop {
         tokio::select! {
-            // ── Stdin ───────────────────────────────────────────────
-            line = stdin.next_line() => {
-                if let Ok(Some(line)) = line {
-                    handle_command(
-                        &line,
-                        &wallet,
-                        &ledger,
-                        &mut swarm,
-                        &tx_cache,
-                    );
+            // ── Stdin (disabled on EOF to prevent busy-loop) ────────
+            line = stdin.next_line(), if stdin_open => {
+                match line {
+                    Ok(Some(line)) => {
+                        handle_command(
+                            &line,
+                            &wallet,
+                            &ledger,
+                            &mut swarm,
+                            &tx_cache,
+                            &connected_peers,
+                        );
+                    }
+                    Ok(None) => {
+                        // EOF (e.g. piped input or /dev/null) — stop polling stdin
+                        debug!("stdin reached EOF, disabling interactive input");
+                        stdin_open = false;
+                    }
+                    Err(e) => {
+                        warn!("stdin read error: {e}");
+                        stdin_open = false;
+                    }
                 }
             }
 
@@ -233,23 +237,44 @@ async fn main() -> Result<()> {
                             &ledger,
                             &mut swarm,
                             &tx_cache,
+                            &mut connected_peers,
                         );
                     }
 
                     // ── Connection established ──────────────────────
                     SwarmEvent::ConnectionEstablished { peer_id: pid, endpoint, .. } => {
                         info!("Connected to {pid} via {}", endpoint.get_remote_address());
+                        connected_peers.insert(pid);
+
+                        // Add peer to Kademlia routing table
                         swarm.behaviour_mut().kademlia.add_address(
                             &pid,
                             endpoint.get_remote_address().clone(),
                         );
+
+                        // Add peer to GossipSub as explicit peer so mesh forms immediately
+                        swarm.behaviour_mut().gossipsub.add_explicit_peer(&pid);
+
+                        // Re-trigger Kademlia bootstrap now that we have a peer
+                        let _ = swarm.behaviour_mut().kademlia.bootstrap();
                     }
 
                     // ── Connection closed ───────────────────────────
                     SwarmEvent::ConnectionClosed { peer_id: pid, cause, .. } => {
                         info!("Disconnected from {pid}: {:?}", cause);
+                        connected_peers.remove(&pid);
+                        swarm.behaviour_mut().gossipsub.remove_explicit_peer(&pid);
                     }
-
+                    // ── Connection errors (critical for debugging) ──────────
+                    SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                        error!("Outgoing connection error to {peer_id:?}: {error}");
+                    }
+                    SwarmEvent::IncomingConnectionError { error, .. } => {
+                        error!("Incoming connection error: {error}");
+                    }
+                    SwarmEvent::Dialing { peer_id, .. } => {
+                        info!("Dialing peer: {peer_id:?}");
+                    }
                     _ => {}
                 }
             }
@@ -267,6 +292,7 @@ fn handle_command(
     ledger: &Ledger,
     swarm: &mut libp2p::Swarm<network::NodeBehaviour>,
     tx_cache: &TxCache,
+    connected_peers: &HashSet<PeerId>,
 ) {
     let parts: Vec<&str> = line.trim().split_whitespace().collect();
     if parts.is_empty() {
@@ -315,27 +341,50 @@ fn handle_command(
             let tx_hash = tx.hash();
             tx_cache.insert(tx_hash.clone(), ());
 
-            // Broadcast via GossipSub
-            let topic = gossipsub::IdentTopic::new(TX_TOPIC);
             let rlp_bytes = tx.to_rlp_bytes();
+            let mut delivered = false;
+
+            // 1) Reliable delivery: send direct Request-Response to ALL connected peers
+            //    This guarantees delivery even if GossipSub mesh hasn't formed yet.
+            for &pid in connected_peers.iter() {
+                let req = TransferRequest {
+                    tx_rlp: rlp_bytes.clone(),
+                };
+                swarm
+                    .behaviour_mut()
+                    .transfer
+                    .send_request(&pid, req);
+                debug!("Sent direct transfer request to {pid}");
+                delivered = true;
+            }
+
+            // 2) Also broadcast via GossipSub for wider network propagation
+            let topic = gossipsub::IdentTopic::new(TX_TOPIC);
             match swarm
                 .behaviour_mut()
                 .gossipsub
                 .publish(topic, rlp_bytes)
             {
                 Ok(_) => {
-                    info!("Transaction broadcast: {tx_hash}");
-                    println!(
-                        "✓ Sent {} to 0x{} (tx: {tx_hash})",
-                        amount,
-                        hex::encode(to_addr)
-                    );
+                    info!("Transaction broadcast via GossipSub: {tx_hash}");
+                    delivered = true;
                 }
                 Err(e) => {
-                    warn!("GossipSub publish failed (no peers?): {e}");
-                    println!("⚠ Transaction applied locally but broadcast failed: {e}");
-                    println!("  (The tx will propagate when peers connect)");
+                    debug!("GossipSub publish skipped (mesh not ready): {e}");
                 }
+            }
+
+            if delivered {
+                info!("Transaction sent: {tx_hash}");
+                println!(
+                    "✓ Sent {} to 0x{} (tx: {tx_hash})",
+                    amount,
+                    hex::encode(to_addr)
+                );
+            } else {
+                warn!("No connected peers — transaction applied locally only");
+                println!("⚠ No peers connected. Transaction saved locally.");
+                println!("  Connect to a peer and try again.");
             }
         }
 
@@ -401,6 +450,7 @@ fn handle_behaviour_event(
     ledger: &Ledger,
     swarm: &mut libp2p::Swarm<network::NodeBehaviour>,
     tx_cache: &TxCache,
+    _connected_peers: &mut HashSet<PeerId>,
 ) {
     match event {
         // ── GossipSub: incoming transaction broadcast ───────────────
@@ -543,10 +593,13 @@ fn handle_behaviour_event(
             info: id_info,
             ..
         }) => {
-            debug!("Identified peer {pid}: protocols={:?}", id_info.protocols);
-            for addr in id_info.listen_addrs {
-                swarm.behaviour_mut().kademlia.add_address(&pid, addr);
+            info!("Identified peer {pid}: agent={}", id_info.agent_version);
+            for addr in &id_info.listen_addrs {
+                swarm.behaviour_mut().kademlia.add_address(&pid, addr.clone());
             }
+            // Add to GossipSub for reliable mesh formation
+            swarm.behaviour_mut().gossipsub.add_explicit_peer(&pid);
+            // Note: don't add to connected_peers here — ConnectionEstablished handles that
         }
 
         // ── mDNS: local peer discovered / expired ───────────────────
@@ -555,6 +608,7 @@ fn handle_behaviour_event(
                 info!("mDNS discovered: {pid} at {addr}");
                 swarm.behaviour_mut().gossipsub.add_explicit_peer(&pid);
                 swarm.behaviour_mut().kademlia.add_address(&pid, addr);
+                // Note: don't add to connected_peers — ConnectionEstablished handles that
             }
         }
         NodeEvent::Mdns(mdns::Event::Expired(peers)) => {

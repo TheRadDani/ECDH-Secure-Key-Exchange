@@ -9,6 +9,7 @@ description = "Production-grade P2P cryptocurrency transfer protocol"
 libp2p = { version = "0.54", features = [
     "kad",              # Kademlia DHT for peer routing & discovery
     "tcp",              # TCP transport
+    "dns",              # DNS resolution for multiaddrs (internet-scale)
     "noise",            # Noise protocol (authenticated encryption, PFS)
     "yamux",            # Stream multiplexing
     "identify",         # Peer identification & capability exchange
