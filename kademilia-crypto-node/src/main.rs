@@ -148,6 +148,16 @@ fn create_transport(
 
     let noise_config =
         noise::Config::new(local_key).context("Failed to create Noise configuration")?;
+
+    let yamux_config = yamux::Config::default();
+
+    let transport = tcp_transport
+        .upgrade(upgrade::Version::V1)
+        .authenticate(noise_config)
+        .multiplex(yamux_config)
+        .timeout(Duration::from_secs(20))
+        .boxed();
+    Ok(transport)
 }
 fn main() {
     println!("Hello, world!");
