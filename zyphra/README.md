@@ -1,5 +1,11 @@
 # Zyphra
 
+<p align="center">
+  <img src="./images/zyphra_logo.svg" alt="Project Logo" style="width:40%;"/>
+</p>
+
+
+
 ## Features
 
 - **🔐 Ed25519 Signatures** – Cryptographically sign and verify transactions (RFC 8032)
