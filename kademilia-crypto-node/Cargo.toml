@@ -4,28 +4,47 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Core libp2p dependencies for P2P networking
+# Core libp2p dependencies for P2P networking - production-grade
 libp2p = { version = "0.54", features = [
-    "kad",           # Kademlia DHT
-    "tcp",           # TCP transport
-    "noise",         # Noise protocol encryption
-    "yamux",         # Multiplexing
-    "identify",      # Peer identification
-    "gossipsub",     # Optional: for future message broadcasting
-    "mdns",          # Optional: local peer discovery
+    "kad",       # Kademlia DHT for distributed storage
+    "tcp",       # TCP transport with tokio integration
+    "noise",     # Noise protocol for authenticated encryption
+    "yamux",     # Multiplexing protocol for efficiency
+    "identify",  # Peer identification and capability exchange
+    "gossipsub", # Message broadcasting
+    "mdns",      # Local peer discovery
+    "macros",    # Derive macros for NetworkBehaviour
+    "tokio",     # Tokio async runtime integration for TCP
 ] }
 
-# Async runtime
-tokio = { version = "1.41", features = ["full"] }
+# Async runtime - latest stable version
+tokio = { version = "1.49", features = ["full"] }
 
-# Cryptography
-sha3 = "0.10"              # SHA-3 (Keccak256) hashing
-libp2p-identity = "0.2"    # Identity management
+# Cryptography - production-grade, audited libraries
+sha3 = "0.10"           # SHA-3 (Keccak256) hashing - NIST standard
+libp2p-identity = "0.2" # Identity management with multi-key support
 
-# Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# Serialization - RLP encoding (Ethereum standard)
+rlp = "0.5" # RLP encoding/decoding for transaction serialization
+serde = { version = "1.0", features = [
+    "derive",
+] } # Still used for other data structures
 
 # Utilities
-hex = "0.4"                # Hex encoding/decoding
-anyhow = "1.0"             # Error handling
+hex = "0.4" # Hex encoding/decoding
+anyhow = "1.0" # Error handling with context
+tracing = "0.1" # Structured logging for observability
+tracing-subscriber = { version = "0.3", features = [
+    "env-filter",
+    "fmt",
+] } # Logging configuration
+
+# Security enhancements
+parking_lot = "0.12" # Better synchronization primitives
+dashmap = "5.5"      # Lock-free concurrent hashmap for caching
+
+[profile.release]
+opt-level = 3     # Maximum optimization
+lto = true        # Link-time optimization for smaller, faster binary
+codegen-units = 1 # Better optimization at cost of compile time
+strip = true      # Strip symbols for smaller binary
