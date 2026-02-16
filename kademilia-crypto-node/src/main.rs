@@ -122,6 +122,33 @@ fn generate_identity_and_nodeid() -> (identity::Keypair, String) {
 
     (local_key, node_id)
 }
+
+/// Create and configure the network transport stack
+///
+/// The transport stack defines how bytes move between nodes:
+///
+/// Layer 1 (Transport): TCP
+/// - Reliable, ordered byte stream
+/// - Works across the internet
+///
+/// Layer 2 (Encryption): Noise Protocol
+/// - Authenticated encryption (like TLS but simpler)
+/// - Provides confidentiality and authenticity
+/// - Prevents man-in-the-middle attacks
+/// - Each peer proves their identity via their keypair
+///
+/// Layer 3 (Multiplexing): Yamux
+/// - Multiple logical streams over one TCP connection
+/// - Allows DHT queries, data transfer, etc. to share a connection
+/// - More efficient than opening multiple TCP connections
+fn create_transport(
+    local_key: &identity::Keypair,
+) -> Result<libp2p::core::transport::Boxed<(PeerId, libp2p::core::muxing::StreamMuxerBox)>> {
+    let tcp_transport = tcp::tokio::Transport::new(tcp::Config::default().nodelay(true));
+
+    let noise_config =
+        noise::Config::new(local_key).context("Failed to create Noise configuration")?;
+}
 fn main() {
     println!("Hello, world!");
 }
