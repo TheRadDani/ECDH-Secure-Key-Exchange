@@ -1,50 +1,55 @@
 [package]
 name = "kademlia-crypto-node"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+description = "Production-grade P2P cryptocurrency transfer protocol"
 
 [dependencies]
-# Core libp2p dependencies for P2P networking - production-grade
+# ── Networking: libp2p production stack ──────────────────────────────
 libp2p = { version = "0.54", features = [
-    "kad",       # Kademlia DHT for distributed storage
-    "tcp",       # TCP transport with tokio integration
-    "noise",     # Noise protocol for authenticated encryption
-    "yamux",     # Multiplexing protocol for efficiency
-    "identify",  # Peer identification and capability exchange
-    "gossipsub", # Message broadcasting
-    "mdns",      # Local peer discovery
-    "macros",    # Derive macros for NetworkBehaviour
-    "tokio",     # Tokio async runtime integration for TCP
+    "kad",              # Kademlia DHT for peer routing & discovery
+    "tcp",              # TCP transport
+    "noise",            # Noise protocol (authenticated encryption, PFS)
+    "yamux",            # Stream multiplexing
+    "identify",         # Peer identification & capability exchange
+    "gossipsub",        # Pub/sub message broadcasting for tx propagation
+    "mdns",             # mDNS local peer discovery (LAN fallback)
+    "request-response", # Req/Resp protocol for direct transfers
+    "cbor",             # CBOR codec for request-response
+    "macros",           # Derive macros for NetworkBehaviour
+    "tokio",            # Tokio async runtime integration
 ] }
 
-# Async runtime - latest stable version
-tokio = { version = "1.49", features = ["full"] }
+# ── Async runtime ───────────────────────────────────────────────────
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
 
-# Cryptography - production-grade, audited libraries
-sha3 = "0.10"           # SHA-3 (Keccak256) hashing - NIST standard
-libp2p-identity = "0.2" # Identity management with multi-key support
+# ── Cryptography (audited, production-grade) ────────────────────────
+ed25519-dalek = { version = "2", features = ["rand_core", "serde"] }
+sha2 = "0.10"                                                        # SHA-256 for AddressID derivation
+sha3 = "0.10"                                                        # Keccak256 for tx hashing
+rand = "0.8"                                                         # Secure RNG
+x25519-dalek = "2"                                                   # X25519 key exchange (available if needed)
+libp2p-identity = "0.2"
 
-# Serialization - RLP encoding (Ethereum standard)
-rlp = "0.5" # RLP encoding/decoding for transaction serialization
-serde = { version = "1.0", features = [
-    "derive",
-] } # Still used for other data structures
+# ── Serialization ───────────────────────────────────────────────────
+rlp = "0.5"                                        # RLP encoding (Ethereum standard for tx)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"                                 # JSON for CLI/debug/config
 
-# Utilities
-hex = "0.4" # Hex encoding/decoding
-anyhow = "1.0" # Error handling with context
-tracing = "0.1" # Structured logging for observability
-tracing-subscriber = { version = "0.3", features = [
-    "env-filter",
-    "fmt",
-] } # Logging configuration
-
-# Security enhancements
-parking_lot = "0.12" # Better synchronization primitives
-dashmap = "5.5"      # Lock-free concurrent hashmap for caching
+# ── Utilities ───────────────────────────────────────────────────────
+hex = "0.4"
+anyhow = "1.0"
+thiserror = "1.0"                                                          # Typed errors for protocol layer
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+chrono = { version = "0.4", features = ["serde"] }
+parking_lot = "0.12"
+dashmap = "6"
+clap = { version = "4", features = ["derive"] }                            # CLI argument parsing
 
 [profile.release]
-opt-level = 3     # Maximum optimization
-lto = true        # Link-time optimization for smaller, faster binary
-codegen-units = 1 # Better optimization at cost of compile time
-strip = true      # Strip symbols for smaller binary
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
