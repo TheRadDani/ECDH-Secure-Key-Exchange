@@ -159,6 +159,21 @@ fn create_transport(
         .boxed();
     Ok(transport)
 }
-fn main() {
+
+#[tokio::main]
+async fn main() {
+    println!("=== Kademlia Crypto-Style P2P Node ===");
+    println!("Simulating cryptocurrency transaction propagation\n");
+    
+    Generate cryptographic identity
+    println!("🔐 Generating cryptographic identity...");
+    let (local_key, node_id) = generate_identity_and_nodeid();
+    let peer_id = PeerId::from(local_key.public());
+
+    println!("✓ Identity generated");
+    println!("  PeerID: {}", peer_id);
+    println!("  NodeID (Keccak256 of public key): {}", node_id);
+    println!("  This NodeID places us in the DHT's 256-bit keyspace\n");
+
     println!("Hello, world!");
 }
