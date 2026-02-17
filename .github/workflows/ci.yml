@@ -45,8 +45,8 @@ jobs:
 
       - name: Show coverage summary
         run: |
-          if [[ ! -f target/cov/lcov.info ]]; then
-            echo "Coverage report not found: target/cov/lcov.info"; exit 1
+          if [[ ! -f zyphra/target/cov/lcov.info ]]; then
+            echo "Coverage report not found: zyphra/target/cov/lcov.info"; exit 1
           fi
           lcov --summary zyphra/target/cov/lcov.info || true
 
