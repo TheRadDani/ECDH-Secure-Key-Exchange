@@ -77,9 +77,12 @@ if command -v cargo-llvm-cov >/dev/null 2>&1; then
   OLD_RUSTFLAGS="${RUSTFLAGS:-}"
   unset RUSTFLAGS || true
   # Run tests and collect profile data without generating report
-  "$cargo" +nightly llvm-cov --workspace --no-report --jobs "$JOBS" || {
+  "$cargo" +nightly llvm-cov --workspace --all-targets --no-report --jobs "$JOBS" || {
     RUSTFLAGS="${OLD_RUSTFLAGS:-}"; export RUSTFLAGS; exit $?
   }
+  # Run built binaries briefly under llvm-cov to exercise `main.rs` / runtime code
+  # Detect binary target names and run each with a short timeout (non-fatal)
+  # (integration tests in tests/ exercise binaries; no extra manual run needed)
   # Generate lcov report
   "$cargo" +nightly llvm-cov report --lcov --output-path target/cov/lcov.info || {
     RUSTFLAGS="${OLD_RUSTFLAGS:-}"; export RUSTFLAGS; exit $?

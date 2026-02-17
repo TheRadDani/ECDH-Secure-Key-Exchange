@@ -45,14 +45,14 @@ jobs:
 
       - name: Show coverage summary
         run: |
-          if [[ ! -f target/cov/lcov.info ]]; then
-            echo "Coverage report not found: target/cov/lcov.info"; exit 1
+          if [[ ! -f zyphra/target/cov/lcov.info ]]; then
+            echo "Coverage report not found: zyphra/target/cov/lcov.info"; exit 1
           fi
-          lcov --summary target/cov/lcov.info || true
+          lcov --summary zyphra/target/cov/lcov.info || true
 
       - name: Fail if coverage below threshold
         run: |
-          percent=$(lcov --summary target/cov/lcov.info | grep -Ei 'lines.*%' | awk '{print $2}' | tr -d '%')
+          percent=$(lcov --summary zyphra/target/cov/lcov.info | grep -Ei 'lines.*%' | awk '{print $2}' | tr -d '%')
           echo "Coverage: ${percent}%"
           if [[ -z "$percent" ]]; then
             echo "Could not determine coverage percentage"; exit 1
