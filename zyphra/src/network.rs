@@ -419,4 +419,136 @@ mod tests {
         assert_eq!(response2.reason, "OK");
         assert!(response1.reason.contains("modified"));
     }
+
+    #[test]
+    fn test_multiple_transfer_responses() {
+        let responses = vec![
+            TransferResponse {
+                accepted: true,
+                reason: "OK".to_string(),
+                tx_hash: "hash1".to_string(),
+            },
+            TransferResponse {
+                accepted: false,
+                reason: "Insufficient balance".to_string(),
+                tx_hash: "hash2".to_string(),
+            },
+            TransferResponse {
+                accepted: true,
+                reason: "Accepted".to_string(),
+                tx_hash: "hash3".to_string(),
+            },
+        ];
+        
+        assert_eq!(responses.len(), 3);
+        assert!(responses[0].accepted);
+        assert!(!responses[1].accepted);
+        assert!(responses[2].accepted);
+    }
+
+    #[test]
+    fn test_transfer_request_equality() {
+        let req1 = TransferRequest {
+            tx_rlp: vec![1, 2, 3, 4, 5],
+        };
+        let req2 = req1.clone();
+        
+        // Clones should have same content
+        assert_eq!(req1.tx_rlp, req2.tx_rlp);
+    }
+
+    #[test]
+    fn test_tx_topic_constant_validity() {
+        // TX_TOPIC should be a valid GossipSub topic format
+        assert!(TX_TOPIC.starts_with("/"));
+        assert!(TX_TOPIC.contains("crypto-node"));
+        assert!(TX_TOPIC.contains("tx"));
+        assert!(TX_TOPIC.contains("1.0.0"));
+    }
+
+    #[test]
+    fn test_transfer_protocol_constant_validity() {
+        // TRANSFER_PROTOCOL should be a valid libp2p protocol format
+        assert!(TRANSFER_PROTOCOL.starts_with("/"));
+        assert!(TRANSFER_PROTOCOL.contains("crypto-node"));
+        assert!(TRANSFER_PROTOCOL.contains("transfer"));
+        assert!(TRANSFER_PROTOCOL.contains("1.0.0"));
+    }
+
+    #[test]
+    fn test_transfer_request_variable_sizes() {
+        let sizes = vec![0, 1, 10, 100, 1000, 10000];
+        
+        for size in sizes {
+            let rlp_data = vec![0u8; size];
+            let request = TransferRequest {
+                tx_rlp: rlp_data,
+            };
+            assert_eq!(request.tx_rlp.len(), size);
+        }
+    }
+
+    #[test]
+    fn test_transfer_response_all_combinations() {
+        let acceptances = vec![true, false];
+        let reasons = vec!["OK", "Failed", "Timeout", "Invalid"];
+        let hashes = vec!["hash1", "hash2", "hash3"];
+        
+        for accepted in &acceptances {
+            for reason in &reasons {
+                for hash in &hashes {
+                    let response = TransferResponse {
+                        accepted: *accepted,
+                        reason: reason.to_string(),
+                        tx_hash: hash.to_string(),
+                    };
+                    
+                    assert_eq!(response.accepted, *accepted);
+                    assert_eq!(response.reason, *reason);
+                    assert_eq!(response.tx_hash, *hash);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_transfer_request_modification() {
+        let mut request = TransferRequest {
+            tx_rlp: vec![1, 2, 3],
+        };
+        
+        request.tx_rlp.push(4);
+        request.tx_rlp.push(5);
+        
+        assert_eq!(request.tx_rlp.len(), 5);
+        assert_eq!(request.tx_rlp[3], 4);
+        assert_eq!(request.tx_rlp[4], 5);
+    }
+
+    #[test]
+    fn test_transfer_response_modification() {
+        let mut response = TransferResponse {
+            accepted: false,
+            reason: "Initial".to_string(),
+            tx_hash: "hash1".to_string(),
+        };
+        
+        response.accepted = true;
+        response.reason = "Updated".to_string();
+        response.tx_hash = "hash2".to_string();
+        
+        assert!(response.accepted);
+        assert_eq!(response.reason, "Updated");
+        assert_eq!(response.tx_hash, "hash2");
+    }
+
+    #[test]
+    fn test_protocol_identifiers_are_different() {
+        // TX_TOPIC and TRANSFER_PROTOCOL should be different
+        assert_ne!(TX_TOPIC, TRANSFER_PROTOCOL);
+        
+        // But both should follow /crypto-node/ convention
+        assert!(TX_TOPIC.starts_with("/crypto-node/"));
+        assert!(TRANSFER_PROTOCOL.starts_with("/crypto-node/"));
+    }
 }
