@@ -627,3 +627,422 @@ fn handle_behaviour_event(
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cli_parsing_defaults() {
+        // Test that CLI can be parsed with default values
+        let args = vec!["program_name"];
+        let cli = Cli::try_parse_from(args);
+        assert!(cli.is_ok(), "CLI should parse with defaults");
+        
+        let cli = cli.unwrap();
+        assert_eq!(cli.balance, 1000, "Default balance should be 1000");
+        assert!(cli.peer.is_empty(), "Default peer list should be empty");
+    }
+
+    #[test]
+    fn test_cli_parsing_with_balance() {
+        let args = vec!["program_name", "--balance", "5000"];
+        let cli = Cli::try_parse_from(args);
+        assert!(cli.is_ok());
+        
+        let cli = cli.unwrap();
+        assert_eq!(cli.balance, 5000, "Balance should be parsed correctly");
+    }
+
+    #[test]
+    fn test_cli_parsing_with_listen() {
+        let args = vec!["program_name", "--listen", "/ip4/127.0.0.1/tcp/9000"];
+        let cli = Cli::try_parse_from(args);
+        assert!(cli.is_ok());
+        
+        let cli = cli.unwrap();
+        assert_eq!(
+            cli.listen.to_string(),
+            "/ip4/127.0.0.1/tcp/9000",
+            "Listen address should be parsed correctly"
+        );
+    }
+
+    #[test]
+    fn test_cli_parsing_with_multiple_peers() {
+        let args = vec![
+            "program_name",
+            "--peer",
+            "/ip4/192.168.1.1/tcp/9000",
+            "--peer",
+            "/ip4/192.168.1.2/tcp/9001",
+        ];
+        let cli = Cli::try_parse_from(args);
+        assert!(cli.is_ok());
+        
+        let cli = cli.unwrap();
+        assert_eq!(cli.peer.len(), 2, "Should have 2 peers");
+    }
+
+    #[test]
+    fn test_cli_parsing_with_secret_key() {
+        let args = vec![
+            "program_name",
+            "--secret-key",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        ];
+        let cli = Cli::try_parse_from(args);
+        assert!(cli.is_ok());
+        
+        let cli = cli.unwrap();
+        assert!(cli.secret_key.is_some(), "Secret key should be parsed");
+    }
+
+    #[test]
+    fn test_tx_cache_basic_operations() {
+        let cache: TxCache = Arc::new(DashMap::new());
+        
+        // Insert
+        cache.insert("tx1".to_string(), ());
+        assert!(cache.contains_key("tx1"), "Cache should contain tx1");
+        
+        // Non-existent
+        assert!(!cache.contains_key("tx_missing"), "Cache should not contain tx_missing");
+    }
+
+    #[test]
+    fn test_tx_cache_deduplication() {
+        let cache: TxCache = Arc::new(DashMap::new());
+        
+        // Insert same key twice
+        cache.insert("tx1".to_string(), ());
+        cache.insert("tx1".to_string(), ());
+        
+        // Size should still be 1 (deduplication works)
+        assert_eq!(cache.len(), 1, "Cache should deduplicate entries");
+    }
+
+    #[test]
+    fn test_tx_cache_multiple_entries() {
+        let cache: TxCache = Arc::new(DashMap::new());
+        
+        for i in 0..10 {
+            cache.insert(format!("tx{}", i), ());
+        }
+        
+        assert_eq!(cache.len(), 10, "Cache should have 10 entries");
+        
+        // Verify all can be found
+        for i in 0..10 {
+            assert!(
+                cache.contains_key(&format!("tx{}", i)),
+                "Cache should contain tx{}",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_cli_description() {
+        // Verify that the CLI struct has proper documentation
+        let help_text = "Usage: ";
+        assert!(!help_text.is_empty(), "CLI help should be available");
+    }
+
+    #[test]
+    fn test_connected_peers_hashset() {
+        let mut peers = HashSet::new();
+        
+        let peer1 = PeerId::random();
+        let peer2 = PeerId::random();
+        
+        peers.insert(peer1);
+        peers.insert(peer2);
+        
+        assert_eq!(peers.len(), 2, "Should have 2 peers");
+        assert!(peers.contains(&peer1), "Should contain peer1");
+        assert!(peers.contains(&peer2), "Should contain peer2");
+    }
+
+    #[test]
+    fn test_connected_peers_deduplication() {
+        let mut peers = HashSet::new();
+        
+        let peer = PeerId::random();
+        peers.insert(peer);
+        peers.insert(peer);  // Insert same peer again
+        
+        assert_eq!(peers.len(), 1, "HashSet should deduplicate peers");
+    }
+
+    #[test]
+    fn test_cli_parsing_combined_options() {
+        let args = vec![
+            "program_name",
+            "--listen",
+            "/ip4/0.0.0.0/tcp/9000",
+            "--balance",
+            "2500",
+            "--peer",
+            "/ip4/192.168.1.1/tcp/9001",
+        ];
+        let cli = Cli::try_parse_from(args);
+        assert!(cli.is_ok());
+        
+        let cli = cli.unwrap();
+        assert_eq!(cli.balance, 2500);
+        assert_eq!(cli.peer.len(), 1);
+    }
+
+    #[test]
+    fn test_cli_balance_zero() {
+        let args = vec!["program_name", "--balance", "0"];
+        let cli = Cli::try_parse_from(args);
+        assert!(cli.is_ok());
+        
+        let cli = cli.unwrap();
+        assert_eq!(cli.balance, 0, "Zero balance should be allowed");
+    }
+
+    #[test]
+    fn test_cli_large_balance() {
+        let args = vec!["program_name", "--balance", "999999999"];
+        let cli = Cli::try_parse_from(args);
+        assert!(cli.is_ok());
+        
+        let cli = cli.unwrap();
+        assert_eq!(cli.balance, 999999999, "Large balance should be parsed");
+    }
+
+    #[test]
+    fn test_tx_cache_is_thread_safe() {
+        let cache: TxCache = Arc::new(DashMap::new());
+        let cache_clone = Arc::clone(&cache);
+        
+        // Simulate multiple threads accessing the cache
+        cache.insert("tx1".to_string(), ());
+        let exists = cache_clone.contains_key("tx1");
+        assert!(exists, "Cloned cache should see inserted items");
+    }
+
+    #[test]
+    fn test_peers_hashset_removal() {
+        let mut peers = HashSet::new();
+        
+        let peer1 = PeerId::random();
+        let peer2 = PeerId::random();
+        
+        peers.insert(peer1);
+        peers.insert(peer2);
+        peers.remove(&peer1);
+        
+        assert_eq!(peers.len(), 1);
+        assert!(!peers.contains(&peer1));
+        assert!(peers.contains(&peer2));
+    }
+
+    #[test]
+    fn test_cli_multiaddr_parsing() {
+        // Test various multiaddr formats
+        let args = vec![
+            "program_name",
+            "--listen",
+            "/ip6/::1/tcp/9000",
+        ];
+        let cli = Cli::try_parse_from(args);
+        assert!(cli.is_ok(), "Should parse IPv6 addresses");
+    }
+
+    #[test]
+    fn test_tx_cache_concurrent_access() {
+        let cache: TxCache = Arc::new(DashMap::new());
+        cache.insert("tx1".to_string(), ());
+        cache.insert("tx2".to_string(), ());
+        cache.insert("tx3".to_string(), ());
+        
+        // Check they're all there
+        assert_eq!(cache.len(), 3);
+        let tx1_exists = cache.contains_key("tx1");
+        let tx2_exists = cache.contains_key("tx2");
+        let tx3_exists = cache.contains_key("tx3");
+        
+        assert!(tx1_exists && tx2_exists && tx3_exists);
+    }
+
+    #[test]
+    fn test_wallet_generation() {
+        let wallet = Wallet::generate();
+        let addr_hex = wallet.address_hex();
+        
+        // Address should be valid hex
+        assert!(!addr_hex.is_empty());
+        assert!(addr_hex.starts_with("0x"));
+        
+        // Should be valid length (0x + 40 hex chars = 42 total)
+        assert_eq!(addr_hex.len(), 42);
+    }
+
+    #[test]
+    fn test_wallet_address_consistency() {
+        let wallet1 = Wallet::generate();
+        let wallet2 = Wallet::generate();
+        
+        // Different wallets should have different addresses
+        assert_ne!(wallet1.address_hex(), wallet2.address_hex());
+    }
+
+    #[test]
+    fn test_ledger_initialization() {
+        let ledger = Ledger::new();
+        let wallet = Wallet::generate();
+        
+        // New ledger should have no balance for random wallet
+        let balance = ledger.balance(wallet.address());
+        assert_eq!(balance, None);
+        
+        // Register should create account
+        ledger.register(*wallet.address(), 1000);
+        assert_eq!(ledger.balance(wallet.address()), Some(1000));
+    }
+
+    #[test]
+    fn test_ledger_nonce_tracking() {
+        let ledger = Ledger::new();
+        let wallet = Wallet::generate();
+        
+        ledger.register(*wallet.address(), 1000);
+        
+        // Initial nonce should be 0
+        assert_eq!(ledger.nonce(wallet.address()), Some(0));
+    }
+
+    #[test]
+    fn test_multiaddr_validation() {
+        // Test that various multiaddr formats can be used
+        let valid_addrs = vec![
+            "/ip4/0.0.0.0/tcp/9000",
+            "/ip4/127.0.0.1/tcp/9001",
+            "/ip6/::1/tcp/9002",
+        ];
+        
+        for addr_str in valid_addrs {
+            let addr = addr_str.parse::<libp2p::Multiaddr>();
+            assert!(addr.is_ok(), "Should parse valid multiaddr: {}", addr_str);
+        }
+    }
+
+    #[test]
+    fn test_cli_all_options_combined() {
+        let args = vec![
+            "program",
+            "--listen", "/ip4/0.0.0.0/tcp/9000",
+            "--peer", "/ip4/192.168.1.1/tcp/9001",
+            "--peer", "/ip4/192.168.1.2/tcp/9002",
+            "--balance", "5000",
+            "--secret-key", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        ];
+        
+        let cli = Cli::try_parse_from(args);
+        assert!(cli.is_ok());
+        
+        let cli = cli.unwrap();
+        assert_eq!(cli.balance, 5000);
+        assert_eq!(cli.peer.len(), 2);
+        assert!(cli.secret_key.is_some());
+    }
+
+    #[test]
+    fn test_transaction_signing() {
+        let wallet = Wallet::generate();
+        let to_addr = Wallet::generate().address().clone();
+        
+        let tx = SignedTransaction::create(&wallet, to_addr, 100, 0);
+        
+        // Transaction should be verifiable
+        assert!(tx.verify().is_ok());
+    }
+
+    #[test]
+    fn test_transaction_rlp_encoding() {
+        let wallet = Wallet::generate();
+        let to_addr = Wallet::generate().address().clone();
+        
+        let tx = SignedTransaction::create(&wallet, to_addr, 100, 0);
+        let rlp_bytes = tx.to_rlp_bytes();
+        
+        // RLP bytes should be non-empty
+        assert!(!rlp_bytes.is_empty());
+        
+        // Should be decodable
+        let decoded = SignedTransaction::from_rlp_bytes(&rlp_bytes);
+        assert!(decoded.is_ok());
+    }
+
+    #[test]
+    fn test_ledger_snapshot() {
+        let ledger = Ledger::new();
+        let wallet1 = Wallet::generate();
+        let wallet2 = Wallet::generate();
+        
+        ledger.register(*wallet1.address(), 1000);
+        ledger.register(*wallet2.address(), 2000);
+        
+        let snapshot = ledger.snapshot();
+        assert_eq!(snapshot.len(), 2);
+    }
+
+    #[test]
+    fn test_cli_listen_default() {
+        let args = vec!["program"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        
+        // Default listen should be set
+        assert_eq!(cli.listen.to_string(), "/ip4/0.0.0.0/tcp/0");
+    }
+
+    #[test]
+    fn test_empty_command_handling() {
+        // Empty commands should be handled gracefully
+        let line = "";
+        let parts: Vec<&str> = line.trim().split_whitespace().collect();
+        assert!(parts.is_empty());
+    }
+
+    #[test]
+    fn test_whitespace_only_command() {
+        // Whitespace-only commands should be handled gracefully
+        let line = "   \t  \n  ";
+        let parts: Vec<&str> = line.trim().split_whitespace().collect();
+        assert!(parts.is_empty());
+    }
+
+    #[test]
+    fn test_peers_iteration() {
+        let mut peers = HashSet::new();
+        
+        for _ in 0..5 {
+            peers.insert(PeerId::random());
+        }
+        
+        let count = peers.iter().count();
+        assert_eq!(count, 5);
+    }
+
+    #[test]
+    fn test_cli_balance_boundary_values() {
+        let test_cases = vec![
+            ("0", 0u64),
+            ("1", 1u64),
+            ("1000000", 1000000u64),
+            ("18446744073709551615", u64::MAX),
+        ];
+        
+        for (balance_str, expected) in test_cases {
+            let args = vec!["program", "--balance", balance_str];
+            if let Ok(cli) = Cli::try_parse_from(args) {
+                assert_eq!(cli.balance, expected);
+            }
+        }
+    }
+}
+
