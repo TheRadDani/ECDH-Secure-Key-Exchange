@@ -199,6 +199,36 @@ cargo test --lib ledger
 cargo test --lib transaction
 ```
 
+## Coverage
+
+Run coverage and generate HTML and lcov reports for the `zyphra` crate.
+
+```bash
+sudo apt-get update
+sudo apt-get install -y lcov bc clang llvm pkg-config libssl-dev
+rustup toolchain install nightly
+rustup component add llvm-tools-preview --toolchain nightly
+# Preferred: cargo-llvm-cov (recommended)
+cargo install cargo-llvm-cov || cargo install grcov
+```
+
+Run coverage (preferred uses `cargo-llvm-cov`, falls back to `grcov`):
+
+```bash
+bash scripts/coverage.sh
+```
+
+Outputs:
+
+- lcov file: `zyphra/target/cov/lcov.info`
+- HTML report: `zyphra/target/cov/<REPORT_DIR>/index.html` (report directory is named per run, e.g. `lcov-<commit>`)
+- Convenience symlink to latest HTML: `zyphra/target/cov/LATEST/index.html` -> points to the most recent report directory
+- (Optional) gzipped archive created by the grcov flow: `zyphra/target/cov/report.tar.gz` if present
+
+CI note:
+
+The repository includes a GitHub Actions workflow that runs coverage for changes under `zyphra/**` and fails if coverage is below the configured threshold (see `.github/workflows/ci.yml`).
+
 ## Configuration
 
 ### Default Values
@@ -238,29 +268,31 @@ cargo test --lib transaction
 
 ### Implemented
 
-✅ Ed25519 signatures (RFC 8032, side-channel hardened)  
-✅ Nonce-based replay protection  
-✅ Address-pubkey binding verification  
-✅ Noise Protocol authenticated encryption + PFS  
-✅ GossipSub message signature validation  
+✅ Ed25519 signatures (RFC 8032, side-channel hardened)
+✅ Nonce-based replay protection
+✅ Address-pubkey binding verification
+✅ Noise Protocol authenticated encryption + PFS
+✅ GossipSub message signature validation
 ✅ No cryptographic material in logs
 
 ### Not Implemented (Future)
 
-⚠️ At-rest encryption for private keys (use OS keyring)  
-⚠️ Distributed consensus (current: local ledger per node)  
-⚠️ Transaction fees  
+⚠️ At-rest encryption for private keys (use OS keyring)
+⚠️ Distributed consensus (current: local ledger per node)
+⚠️ Transaction fees
 ⚠️ Merkle tree proofs for light clients
 
 ## Code Organization
 
 ```
+
 src/
-├── main.rs           - Entry point, CLI, event loop, command/event handlers
-├── wallet.rs         - Ed25519 keypair, address derivation, signing
-├── transaction.rs    - SignedTransaction, RLP encoding, verification
-├── ledger.rs         - Balance tracking, double-spend prevention
-└── network.rs        - libp2p behaviour (Kademlia, GossipSub, etc.)
+├── main.rs - Entry point, CLI, event loop, command/event handlers
+├── wallet.rs - Ed25519 keypair, address derivation, signing
+├── transaction.rs - SignedTransaction, RLP encoding, verification
+├── ledger.rs - Balance tracking, double-spend prevention
+└── network.rs - libp2p behaviour (Kademlia, GossipSub, etc.)
+
 ```
 
 ## Example Workflows
