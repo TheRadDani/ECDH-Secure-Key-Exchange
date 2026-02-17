@@ -27,13 +27,18 @@ jobs:
 
       - name: Install required components
         run: |
-          rustup component add llvm-tools-preview || true
+          # Ensure llvm tools are available for coverage (install for nightly)
+          rustup component add llvm-tools-preview --toolchain nightly || true
           sudo apt-get update -y
           sudo apt-get install -y lcov bc clang llvm pkg-config libssl-dev
 
       - name: Install grcov
         run: |
-          cargo install grcov || cargo install grcov
+          cargo install grcov || true
+
+      - name: Install cargo-llvm-cov
+        run: |
+          cargo install cargo-llvm-cov || true
 
       - name: Run coverage script
         run: bash zyphra/scripts/coverage.sh
