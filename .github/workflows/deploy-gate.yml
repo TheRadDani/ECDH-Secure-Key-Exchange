@@ -1,16 +1,17 @@
 name: Deploy Gate
 
+# Run this deploy gate only after the CI workflow completes successfully
 on:
-  push:
-    branches:
-      - '**'
-  pull_request:
-    branches:
-      - '**'
+  workflow_run:
+    workflows:
+      - "CI - Tests & Coverage"
+    types:
+      - completed
 
 jobs:
   deploy-check:
     name: deploy-k8s gate
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:

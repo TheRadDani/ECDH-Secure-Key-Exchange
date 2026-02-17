@@ -1,0 +1,55 @@
+name: CI - Tests & Coverage
+
+on:
+  push:
+    paths:
+      - "zyphra/**"
+  pull_request:
+    paths:
+      - "zyphra/**"
+
+jobs:
+  ci:
+    name: Run tests and coverage
+    runs-on: ubuntu-latest
+    env:
+      COVERAGE_THRESHOLD: 80
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+
+      - name: Install required components
+        run: |
+          rustup component add llvm-tools-preview || true
+          sudo apt-get update -y
+          sudo apt-get install -y lcov bc clang llvm pkg-config libssl-dev
+
+      - name: Install grcov
+        run: |
+          cargo install grcov || cargo install grcov
+
+      - name: Run coverage script
+        run: bash zyphra/scripts/coverage.sh
+
+      - name: Show coverage summary
+        run: |
+          if [[ ! -f target/cov/lcov.info ]]; then
+            echo "Coverage report not found: target/cov/lcov.info"; exit 1
+          fi
+          lcov --summary target/cov/lcov.info || true
+
+      - name: Fail if coverage below threshold
+        run: |
+          percent=$(lcov --summary target/cov/lcov.info | grep -Ei 'lines.*%' | awk '{print $2}' | tr -d '%')
+          echo "Coverage: ${percent}%"
+          if [[ -z "$percent" ]]; then
+            echo "Could not determine coverage percentage"; exit 1
+          fi
+          awk -v p="$percent" -v t="$COVERAGE_THRESHOLD" 'BEGIN { if (p+0 < t+0) exit 1 }'
